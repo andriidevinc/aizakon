@@ -1,6 +1,11 @@
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase-server'
+import HeaderAuth from './HeaderAuth'
 
-export default function Header() {
+export default async function Header() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
   return (
     <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
@@ -25,6 +30,7 @@ export default function Header() {
           >
             rada.gov.ua ↗
           </a>
+          <HeaderAuth user={user} />
         </nav>
       </div>
     </header>
