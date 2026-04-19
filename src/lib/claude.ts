@@ -135,11 +135,31 @@ export async function analyzeBill(bill: BillWithRelations): Promise<AIAnalysis> 
     .sort((a, b) => new Date(a.passing_date ?? 0).getTime() - new Date(b.passing_date ?? 0).getTime())
     .map(p => `• ${p.title}`).join('\n')
 
-  // Короткий аналіз: тільки дані з бази, без зовнішніх запитів (швидко і надійно)
-  const contextBlock = ''
-  const textBlock = ''
+  // Знаходимо URL картки: з бази або шукаємо на itd за номером
+  let cardUrl = bill.url?.includes('itd.rada.gov.ua') ? bill.url : null
+  if (!cardUrl && bill.number) cardUrl = await findItdCardUrl(bill.number)
 
-  const textPrompt = `Ти — аналітик законодавства України. Пояснюєш законопроекти коротко і конкретно для звичайних людей.
+  let pdfBase64: string | null = null
+  let billText = ''
+  let cardText = ''
+
+  if (cardUrl) {
+    const { cardText: ct, pdfUrl, docxUrl, noteUrl } = await fetchCardData(cardUrl)
+    cardText = ct
+    if (pdfUrl) pdfBase64 = await fetchPdfBase64(pdfUrl)
+    if (!pdfBase64 && docxUrl) billText = await fetchDocxText(docxUrl)
+    if (!pdfBase64 && !billText && noteUrl) billText = await fetchDocxText(noteUrl)
+  }
+
+  const contextBlock = cardText ? `\nКОНТЕКСТ З ОФІЦІЙНОЇ КАРТКИ:\n${cardText}` : ''
+  const textBlock = billText ? `\nТЕКСТ ДОКУМЕНТУ:\n${billText}` : ''
+
+  const sourceNote = pdfBase64
+    ? 'Повний текст законопроекту додано як PDF. Читай БЕЗПОСЕРЕДНЬО З НЬОГО.'
+    : billText ? 'Текст документу додано вище. Аналізуй на його основі.'
+    : 'Повний текст недоступний. Аналізуй на основі наявних метаданих.'
+
+  const textPrompt = `Ти — аналітик законодавства України. Прочитай повний текст законопроекту і дай КОРОТКЕ пояснення для звичайних людей.
 
 ДАНІ:
 Назва: ${bill.title}
@@ -148,17 +168,29 @@ export async function analyzeBill(bill: BillWithRelations): Promise<AIAnalysis> 
 Статус: ${bill.current_phase_title ?? '—'}
 ${passingsHistory ? `Проходження:\n${passingsHistory}` : ''}${contextBlock}${textBlock}
 
+${sourceNote}
+
 ПРАВИЛА:
-— summary: 1-2 речення. Що конкретно змінює. Починай з дієслова.
-— impact: 1-2 речення. Хто відчує і як. Якщо технічний закон — "Безпосередньо на громадян не впливає. Стосується [сфери]."
+— summary: 1-2 речення на основі РЕАЛЬНОГО ТЕКСТУ закону. Що конкретно змінює. Починай з дієслова.
+— impact: 1-2 речення. Хто реально відчує зміни і як. Якщо технічний — "Безпосередньо на громадян не впливає. Стосується [сфери]."
 — keywords: 3 найточніші слова
 
 JSON без markdown: {"summary":"...","impact":"...","keywords":["...","...","..."]}`
 
+  const shortMessages: Anthropic.MessageParam[] = pdfBase64
+    ? [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } } as Anthropic.DocumentBlockParam,
+          { type: 'text', text: textPrompt },
+        ],
+      }]
+    : [{ role: 'user', content: textPrompt }]
+
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    messages: [{ role: 'user', content: textPrompt }],
+    messages: shortMessages,
   })
   const content = message.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type')
