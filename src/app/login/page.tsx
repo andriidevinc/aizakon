@@ -23,7 +23,11 @@ export default function LoginPage() {
     setSuccess(null)
 
     if (mode === 'register') {
-      const { error } = await supabase.auth.signUp({ email, password })
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: 'https://aizakon.vercel.app/auth/callback' },
+      })
       if (error) {
         setError(error.message === 'User already registered'
           ? 'Цей email вже зареєстрований. Спробуйте увійти.'
