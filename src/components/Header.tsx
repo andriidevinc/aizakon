@@ -22,6 +22,9 @@ export default async function Header() {
           <Link href="/" className="hover:text-gray-900 transition-colors">
             Законопроекти
           </Link>
+          <Link href="/deputies" className="hover:text-gray-900 transition-colors hidden sm:inline">
+            Депутати
+          </Link>
           <a
             href="https://rada.gov.ua"
             target="_blank"
