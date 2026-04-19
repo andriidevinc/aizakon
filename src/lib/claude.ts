@@ -107,14 +107,8 @@ export async function analyzeBill(bill: BillWithRelations): Promise<AIAnalysis> 
     .sort((a, b) => new Date(a.passing_date ?? 0).getTime() - new Date(b.passing_date ?? 0).getTime())
     .map(p => `• ${p.title}`).join('\n')
 
-  // Короткий аналіз: лише метадані з картки (без PDF — щоб вкластись у 10с ліміт Vercel Hobby)
-  let cardText = ''
-  if (bill.url?.includes('itd.rada.gov.ua')) {
-    const { cardText: ct } = await fetchCardData(bill.url)
-    cardText = ct
-  }
-
-  const contextBlock = cardText ? `\nКОНТЕКСТ З ОФІЦІЙНОЇ КАРТКИ:\n${cardText}` : ''
+  // Короткий аналіз: тільки дані з бази, без зовнішніх запитів (швидко і надійно)
+  const contextBlock = ''
   const textBlock = ''
 
   const textPrompt = `Ти — аналітик законодавства України. Пояснюєш законопроекти коротко і конкретно для звичайних людей.
