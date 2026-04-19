@@ -20,6 +20,18 @@ function formatDate(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`
 }
 
+function decodeHTML(str: string): string {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#xA;/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+}
+
 function parsePage(html: string) {
   const bills: Record<string, unknown>[] = []
   const rows = html.split('<tr>')
@@ -31,7 +43,7 @@ function parsePage(html: string) {
     const number = cardMatch[2].trim()
 
     const tds = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
-      .map(m => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      .map(m => decodeHTML(m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()))
 
     const date      = tds[2] ?? null
     const subject   = tds[3] ?? null
