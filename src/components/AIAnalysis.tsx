@@ -72,7 +72,7 @@ export default function AIAnalysis({ billId, initialSummary, initialImpact, init
   if (!summary) return null
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Ключові слова */}
       {keywords && keywords.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -85,21 +85,28 @@ export default function AIAnalysis({ billId, initialSummary, initialImpact, init
       )}
 
       {/* Суть закону */}
-      <div>
-        <p className="text-xs font-medium text-gray-400 mb-1">Що змінює</p>
-        <p className="text-gray-900 text-sm leading-relaxed">{summary}</p>
+      <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          Суть закону
+        </h3>
+        <p className="text-gray-800 text-base leading-relaxed">{summary}</p>
       </div>
 
       {/* Що це означає для людей */}
       {impact && (
-        <div>
-          <p className="text-xs font-medium text-gray-400 mb-1">Для кого важливо</p>
-          <p className="text-gray-900 text-sm leading-relaxed">{impact}</p>
+        <div className="bg-blue-50 rounded-xl p-5 border border-blue-100">
+          <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2">
+            Що це означає для вас
+          </h3>
+          <p className="text-gray-800 text-base leading-relaxed">{impact}</p>
         </div>
       )}
 
-      <p className="text-xs text-gray-400">
-        AI-аналіз на основі офіційних даних. Не є юридичною консультацією.
+      <p className="text-xs text-gray-400 flex items-center gap-1">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        Аналіз згенеровано AI на основі офіційних даних. Для точних юридичних питань консультуйтеся з фахівцями.
       </p>
     </div>
   )
