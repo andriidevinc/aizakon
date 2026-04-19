@@ -60,7 +60,15 @@ ${passingsHistory ? `\nІсторія проходження:\n${passingsHistory
     throw new Error('Unexpected response type from Claude')
   }
 
-  const parsed = JSON.parse(content.text)
+  // Видаляємо markdown code blocks якщо Claude їх додав
+  const raw = content.text.trim()
+  const jsonText = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  const parsed = JSON.parse(jsonText)
   return {
     summary: parsed.summary,
     impact: parsed.impact,
