@@ -8,13 +8,15 @@ interface Props {
   initialImpact: string | null
   initialKeywords: string[] | null
   initialDetailed: string | null
+  initialPdfAvailable: boolean | null
 }
 
-export default function AIAnalysis({ billId, initialSummary, initialImpact, initialKeywords, initialDetailed }: Props) {
+export default function AIAnalysis({ billId, initialSummary, initialImpact, initialKeywords, initialDetailed, initialPdfAvailable }: Props) {
   const [summary, setSummary] = useState(initialSummary)
   const [impact, setImpact] = useState(initialImpact)
   const [keywords, setKeywords] = useState(initialKeywords)
   const [detailed, setDetailed] = useState(initialDetailed)
+  const [pdfAvailable, setPdfAvailable] = useState<boolean | null>(initialPdfAvailable)
   const [loading, setLoading] = useState(false)
   const [loadingDetailed, setLoadingDetailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,6 +36,7 @@ export default function AIAnalysis({ billId, initialSummary, initialImpact, init
       setSummary(data.summary)
       setImpact(data.impact)
       setKeywords(data.keywords)
+      setPdfAvailable(data.pdfAvailable ?? true)
     } catch {
       setError('Не вдалося отримати аналіз. Спробуйте пізніше.')
     } finally {
@@ -50,6 +53,7 @@ export default function AIAnalysis({ billId, initialSummary, initialImpact, init
       if (!res.ok) throw new Error('Помилка сервера')
       const data = await res.json()
       setDetailed(data.detailed)
+      if (data.pdfAvailable !== undefined) setPdfAvailable(data.pdfAvailable)
     } catch {
       setDetailed('Не вдалося отримати детальний аналіз. Спробуйте пізніше.')
     } finally {
@@ -107,6 +111,18 @@ export default function AIAnalysis({ billId, initialSummary, initialImpact, init
         <div className="bg-blue-50 rounded-xl p-5 border border-blue-100">
           <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2">Що це означає для вас</h3>
           <p className="text-gray-800 text-base leading-relaxed">{impact}</p>
+        </div>
+      )}
+
+      {/* Попередження якщо аналіз без повного тексту */}
+      {pdfAvailable === false && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <svg className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <p className="text-xs text-amber-700">
+            Не вдалося завантажити повний текст закону — аналіз базується на часткових даних. Точність може бути нижчою.
+          </p>
         </div>
       )}
 

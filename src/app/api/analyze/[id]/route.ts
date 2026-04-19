@@ -16,7 +16,6 @@ export async function POST(
     return NextResponse.json({ error: 'Невірний ID' }, { status: 400 })
   }
 
-  // Отримати законопроект з пов'язаними даними
   const { data: bill, error } = await supabase
     .from('bills')
     .select(`
@@ -37,6 +36,7 @@ export async function POST(
       summary: bill.ai_summary,
       impact: bill.ai_impact,
       keywords: bill.ai_keywords,
+      pdfAvailable: bill.ai_pdf_available ?? true,
       cached: true,
     })
   }
@@ -44,12 +44,12 @@ export async function POST(
   try {
     const analysis = await analyzeBill(bill as BillWithRelations)
 
-    // Зберегти аналіз в базу
     const adminClient = getAdminClient()
     await adminClient.from('bills').update({
       ai_summary: analysis.summary,
       ai_impact: analysis.impact,
       ai_keywords: analysis.keywords,
+      ai_pdf_available: analysis.pdfAvailable,
       ai_analyzed_at: new Date().toISOString(),
     }).eq('id', billId)
 

@@ -24,14 +24,20 @@ export async function POST(
   const b = bill as BillWithRelations & { ai_detailed?: string }
 
   // Повертаємо кеш якщо є
-  if (b.ai_detailed) return NextResponse.json({ detailed: b.ai_detailed })
+  if (b.ai_detailed) {
+    return NextResponse.json({
+      detailed: b.ai_detailed,
+      pdfAvailable: b.ai_pdf_available ?? true,
+    })
+  }
 
-  // Генеруємо детальний аналіз
-  const detailed = await analyzeDetailed(b)
+  const result = await analyzeDetailed(b)
 
-  // Зберігаємо в базу
   const admin = getAdminClient()
-  await admin.from('bills').update({ ai_detailed: detailed }).eq('id', billId)
+  await admin.from('bills').update({
+    ai_detailed: result.text,
+    ai_pdf_available: result.pdfAvailable,
+  }).eq('id', billId)
 
-  return NextResponse.json({ detailed })
+  return NextResponse.json({ detailed: result.text, pdfAvailable: result.pdfAvailable })
 }

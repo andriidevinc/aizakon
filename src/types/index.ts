@@ -19,6 +19,7 @@ export interface Bill {
   ai_impact: string | null
   ai_keywords: string[] | null
   ai_analyzed_at: string | null
+  ai_pdf_available: boolean | null
   synced_at: string | null
   created_at: string | null
   updated_at: string | null

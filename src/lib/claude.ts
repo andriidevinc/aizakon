@@ -10,6 +10,7 @@ export interface AIAnalysis {
   summary: string
   impact: string
   keywords: string[]
+  pdfAvailable: boolean
 }
 
 // Знаходить PDF або docx "Проект Закону" зі сторінки картки
@@ -35,35 +36,51 @@ function findBillDocuments(html: string): { pdfUrl: string | null; docxUrl: stri
   return { pdfUrl, docxUrl, noteUrl }
 }
 
-// Завантажує PDF і повертає як base64
-async function fetchPdfBase64(url: string): Promise<string | null> {
-  try {
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
-      signal: AbortSignal.timeout(12000),
-    })
-    if (!r.ok) return null
-    const buffer = await r.arrayBuffer()
-    return Buffer.from(buffer).toString('base64')
-  } catch {
-    return null
+// Завантажує PDF з retry і повертає як base64
+async function fetchPdfBase64(url: string, retries = 3): Promise<string | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
+        signal: AbortSignal.timeout(20000),
+      })
+      if (!r.ok) {
+        if (attempt < retries) continue
+        return null
+      }
+      const buffer = await r.arrayBuffer()
+      if (buffer.byteLength < 1000) {
+        if (attempt < retries) continue
+        return null
+      }
+      return Buffer.from(buffer).toString('base64')
+    } catch {
+      if (attempt === retries) return null
+    }
   }
+  return null
 }
 
-// Завантажує і парсить docx у plain text
-async function fetchDocxText(url: string): Promise<string> {
-  try {
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!r.ok) return ''
-    const buffer = await r.arrayBuffer()
-    const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) })
-    return result.value.replace(/\s+/g, ' ').trim().slice(0, 6000)
-  } catch {
-    return ''
+// Завантажує і парсить docx у plain text з retry
+async function fetchDocxText(url: string, retries = 2): Promise<string> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!r.ok) {
+        if (attempt < retries) continue
+        return ''
+      }
+      const buffer = await r.arrayBuffer()
+      const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) })
+      return result.value.replace(/\s+/g, ' ').trim().slice(0, 6000)
+    } catch {
+      if (attempt === retries) return ''
+    }
   }
+  return ''
 }
 
 // Шукає URL картки на itd.rada.gov.ua за реєстраційним номером (для старих CSV-законів)
@@ -83,7 +100,7 @@ async function findItdCardUrl(billNumber: string): Promise<string | null> {
         'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)',
       },
       body: body.toString(),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     })
     const html = await r.text()
     const cardMatch = html.match(/\/billInfo\/Bills\/Card\/(\d+)/)
@@ -99,7 +116,7 @@ async function fetchCardData(cardUrl: string) {
   try {
     const r = await fetch(cardUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     })
     const html = await r.text()
     const docs = findBillDocuments(html)
@@ -121,6 +138,26 @@ async function fetchCardData(cardUrl: string) {
   }
 }
 
+// Отримує повний текст закону (PDF або docx). Повертає { pdfBase64, billText, pdfAvailable }
+async function fetchBillText(bill: BillWithRelations) {
+  let cardUrl = bill.url?.includes('itd.rada.gov.ua') ? bill.url : null
+  if (!cardUrl && bill.number) cardUrl = await findItdCardUrl(bill.number)
+
+  if (!cardUrl) return { pdfBase64: null, billText: '', cardText: '', pdfAvailable: false }
+
+  const { cardText, pdfUrl, docxUrl, noteUrl } = await fetchCardData(cardUrl)
+
+  let pdfBase64: string | null = null
+  let billText = ''
+
+  if (pdfUrl) pdfBase64 = await fetchPdfBase64(pdfUrl)
+  if (!pdfBase64 && docxUrl) billText = await fetchDocxText(docxUrl)
+  if (!pdfBase64 && !billText && noteUrl) billText = await fetchDocxText(noteUrl)
+
+  const pdfAvailable = !!(pdfBase64 || billText)
+  return { pdfBase64, billText, cardText, pdfAvailable }
+}
+
 // ── КОРОТКИЙ АНАЛІЗ (для картки законопроекту) ──────────────────────────────
 
 export async function analyzeBill(bill: BillWithRelations): Promise<AIAnalysis> {
@@ -135,29 +172,16 @@ export async function analyzeBill(bill: BillWithRelations): Promise<AIAnalysis> 
     .sort((a, b) => new Date(a.passing_date ?? 0).getTime() - new Date(b.passing_date ?? 0).getTime())
     .map(p => `• ${p.title}`).join('\n')
 
-  // Знаходимо URL картки: з бази або шукаємо на itd за номером
-  let cardUrl = bill.url?.includes('itd.rada.gov.ua') ? bill.url : null
-  if (!cardUrl && bill.number) cardUrl = await findItdCardUrl(bill.number)
-
-  let pdfBase64: string | null = null
-  let billText = ''
-  let cardText = ''
-
-  if (cardUrl) {
-    const { cardText: ct, pdfUrl, docxUrl, noteUrl } = await fetchCardData(cardUrl)
-    cardText = ct
-    if (pdfUrl) pdfBase64 = await fetchPdfBase64(pdfUrl)
-    if (!pdfBase64 && docxUrl) billText = await fetchDocxText(docxUrl)
-    if (!pdfBase64 && !billText && noteUrl) billText = await fetchDocxText(noteUrl)
-  }
+  const { pdfBase64, billText, cardText, pdfAvailable } = await fetchBillText(bill)
 
   const contextBlock = cardText ? `\nКОНТЕКСТ З ОФІЦІЙНОЇ КАРТКИ:\n${cardText}` : ''
   const textBlock = billText ? `\nТЕКСТ ДОКУМЕНТУ:\n${billText}` : ''
 
   const sourceNote = pdfBase64
     ? 'Повний текст законопроекту додано як PDF. Читай БЕЗПОСЕРЕДНЬО З НЬОГО.'
-    : billText ? 'Текст документу додано вище. Аналізуй на його основі.'
-    : 'Повний текст недоступний. Аналізуй на основі наявних метаданих.'
+    : billText
+    ? 'Текст документу додано вище. Аналізуй на його основі.'
+    : 'УВАГА: Повний текст недоступний технічно (сервер не відповів). Аналізуй на основі наявних метаданих, але познач це в summary.'
 
   const textPrompt = `Ти — аналітик законодавства України. Прочитай повний текст законопроекту і дай КОРОТКЕ пояснення для звичайних людей.
 
@@ -197,29 +221,13 @@ JSON без markdown: {"summary":"...","impact":"...","keywords":["...","...",".
 
   const jsonText = content.text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
   const parsed = JSON.parse(jsonText)
-  return { summary: parsed.summary, impact: parsed.impact, keywords: parsed.keywords ?? [] }
+  return { summary: parsed.summary, impact: parsed.impact, keywords: parsed.keywords ?? [], pdfAvailable }
 }
 
 // ── ДЕТАЛЬНИЙ АНАЛІЗ (по запиту) ────────────────────────────────────────────
 
-export async function analyzeDetailed(bill: BillWithRelations): Promise<string> {
-  let pdfBase64: string | null = null
-  let billText = ''
-  let cardText = ''
-
-  // Знаходимо URL картки: з бази або шукаємо на itd за номером
-  let cardUrl = bill.url?.includes('itd.rada.gov.ua') ? bill.url : null
-  if (!cardUrl && bill.number) {
-    cardUrl = await findItdCardUrl(bill.number)
-  }
-
-  if (cardUrl) {
-    const { cardText: ct, pdfUrl, docxUrl, noteUrl } = await fetchCardData(cardUrl)
-    cardText = ct
-    if (pdfUrl) pdfBase64 = await fetchPdfBase64(pdfUrl)
-    if (!pdfBase64 && docxUrl) billText = await fetchDocxText(docxUrl)
-    if (!pdfBase64 && !billText && noteUrl) billText = await fetchDocxText(noteUrl)
-  }
+export async function analyzeDetailed(bill: BillWithRelations): Promise<{ text: string; pdfAvailable: boolean }> {
+  const { pdfBase64, billText, cardText, pdfAvailable } = await fetchBillText(bill)
 
   const contextBlock = cardText ? `\nКОНТЕКСТ З ОФІЦІЙНОЇ КАРТКИ:\n${cardText}` : ''
   const textBlock = billText ? `\nТЕКСТ ДОКУМЕНТУ:\n${billText}` : ''
@@ -228,7 +236,7 @@ export async function analyzeDetailed(bill: BillWithRelations): Promise<string> 
     ? 'Повний текст законопроекту додано як PDF. Читай БЕЗПОСЕРЕДНЬО З НЬОГО.'
     : billText
     ? 'Текст документу додано вище. Аналізуй на його основі.'
-    : 'Повний текст недоступний. Аналізуй на основі наявних метаданих та контексту.'
+    : 'УВАГА: Повний текст недоступний технічно (сервер не відповів). Аналізуй на основі наявних метаданих.'
 
   const detailedPrompt = `Ти — незалежний аналітик законодавства. Твоя місія — знайти що насправді написано в законі, незалежно від того що влада декларує публічно.
 
@@ -268,5 +276,5 @@ ${sourceNote}
   const message = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 4096, messages })
   const content = message.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type')
-  return content.text.trim()
+  return { text: content.text.trim(), pdfAvailable }
 }
