@@ -3,12 +3,12 @@ import './globals.css'
 import Header from '@/components/Header'
 
 export const metadata: Metadata = {
-  title: 'AIZanon — Закони Верховної Ради простою мовою',
+  title: 'AIZakon — Закони Верховної Ради простою мовою',
   description:
     'Законопроекти Верховної Ради України з AI-поясненням. Хто вніс, як голосували, що це означає для вас.',
   keywords: 'Верховна Рада, закони України, законопроекти, голосування депутатів',
   openGraph: {
-    title: 'AIZanon — Закони простою мовою',
+    title: 'AIZakon — Закони простою мовою',
     description: 'Всі законопроекти ВРУ з поясненням від AI',
     locale: 'uk_UA',
     type: 'website',
@@ -36,7 +36,7 @@ export default function RootLayout({
               </a>
               &nbsp;(CC BY 4.0)
             </span>
-            <span>AIZanon — незалежний проект. Не афільований з ВРУ.</span>
+            <span>AIZakon — незалежний проект. Не афільований з ВРУ.</span>
           </div>
         </footer>
       </body>

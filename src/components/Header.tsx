@@ -6,7 +6,7 @@ export default function Header() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <span className="font-bold text-lg tracking-tight text-gray-900">
-            AI<span className="text-blue-600">Zanon</span>
+            AI<span className="text-blue-600">Zakon</span>
           </span>
           <span className="hidden sm:inline text-xs text-gray-400 border border-gray-200 px-2 py-0.5 rounded-full">
             Закони простою мовою
