@@ -1,0 +1,113 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+
+interface Props {
+  billId: number
+  initialSummary: string | null
+  initialImpact: string | null
+  initialKeywords: string[] | null
+}
+
+export default function AIAnalysis({ billId, initialSummary, initialImpact, initialKeywords }: Props) {
+  const [summary, setSummary] = useState(initialSummary)
+  const [impact, setImpact] = useState(initialImpact)
+  const [keywords, setKeywords] = useState(initialKeywords)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Автоматично запускаємо аналіз якщо його ще немає
+  useEffect(() => {
+    if (!initialSummary) {
+      runAnalysis()
+    }
+  }, [billId])
+
+  async function runAnalysis() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/analyze/${billId}`, { method: 'POST' })
+      if (!res.ok) throw new Error('Помилка сервера')
+      const data = await res.json()
+      setSummary(data.summary)
+      setImpact(data.impact)
+      setKeywords(data.keywords)
+    } catch {
+      setError('Не вдалося отримати аналіз. Спробуйте пізніше.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-blue-50 rounded-xl p-6 border border-blue-100">
+        <div className="flex items-center gap-3 text-blue-600">
+          <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm font-medium">AI аналізує законопроект...</span>
+        </div>
+        <p className="text-blue-500 text-xs mt-2">Зазвичай займає 5-10 секунд</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 rounded-xl p-5 border border-red-100">
+        <p className="text-red-600 text-sm">{error}</p>
+        <button
+          onClick={runAnalysis}
+          className="mt-3 text-sm text-red-700 underline hover:no-underline"
+        >
+          Спробувати ще раз
+        </button>
+      </div>
+    )
+  }
+
+  if (!summary) return null
+
+  return (
+    <div className="space-y-4">
+      {/* Ключові слова */}
+      {keywords && keywords.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {keywords.map(kw => (
+            <span key={kw} className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full">
+              {kw}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Суть закону */}
+      <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          Суть закону
+        </h3>
+        <p className="text-gray-800 text-base leading-relaxed">{summary}</p>
+      </div>
+
+      {/* Що це означає для людей */}
+      {impact && (
+        <div className="bg-blue-50 rounded-xl p-5 border border-blue-100">
+          <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2">
+            Що це означає для вас
+          </h3>
+          <p className="text-gray-800 text-base leading-relaxed">{impact}</p>
+        </div>
+      )}
+
+      <p className="text-xs text-gray-400 flex items-center gap-1">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        Аналіз згенеровано AI на основі офіційних даних. Для точних юридичних питань консультуйтеся з фахівцями.
+      </p>
+    </div>
+  )
+}
