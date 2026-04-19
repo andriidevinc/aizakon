@@ -66,6 +66,34 @@ async function fetchDocxText(url: string): Promise<string> {
   }
 }
 
+// Шукає URL картки на itd.rada.gov.ua за реєстраційним номером (для старих CSV-законів)
+async function findItdCardUrl(billNumber: string): Promise<string | null> {
+  try {
+    const body = new URLSearchParams({
+      'BillSearchModel.registrationNumber': billNumber,
+      'BillSearchModel.registrationNumberCompareOperation': '1',
+      'BillSearchModel.convocation': '0',
+      'BillSearchModel.session': '0',
+      'BillSearchModel.detailView': 'False',
+    })
+    const r = await fetch('https://itd.rada.gov.ua/billInfo/Bills/searchResults', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)',
+      },
+      body: body.toString(),
+      signal: AbortSignal.timeout(8000),
+    })
+    const html = await r.text()
+    const cardMatch = html.match(/\/billInfo\/Bills\/Card\/(\d+)/)
+    if (cardMatch) return `https://itd.rada.gov.ua/billInfo/Bills/Card/${cardMatch[1]}`
+    return null
+  } catch {
+    return null
+  }
+}
+
 // Завантажує картку і знаходить посилання на документи
 async function fetchCardData(cardUrl: string) {
   try {
@@ -147,16 +175,28 @@ export async function analyzeDetailed(bill: BillWithRelations): Promise<string> 
   let billText = ''
   let cardText = ''
 
-  if (bill.url?.includes('itd.rada.gov.ua')) {
-    const { cardText: ct, pdfUrl, docxUrl, noteUrl } = await fetchCardData(bill.url)
+  // Знаходимо URL картки: з бази або шукаємо на itd за номером
+  let cardUrl = bill.url?.includes('itd.rada.gov.ua') ? bill.url : null
+  if (!cardUrl && bill.number) {
+    cardUrl = await findItdCardUrl(bill.number)
+  }
+
+  if (cardUrl) {
+    const { cardText: ct, pdfUrl, docxUrl, noteUrl } = await fetchCardData(cardUrl)
     cardText = ct
     if (pdfUrl) pdfBase64 = await fetchPdfBase64(pdfUrl)
     if (!pdfBase64 && docxUrl) billText = await fetchDocxText(docxUrl)
     if (!pdfBase64 && !billText && noteUrl) billText = await fetchDocxText(noteUrl)
   }
 
-  const contextBlock = cardText ? `\nКОНТЕКСТ:\n${cardText}` : ''
+  const contextBlock = cardText ? `\nКОНТЕКСТ З ОФІЦІЙНОЇ КАРТКИ:\n${cardText}` : ''
   const textBlock = billText ? `\nТЕКСТ ДОКУМЕНТУ:\n${billText}` : ''
+
+  const sourceNote = pdfBase64
+    ? 'Повний текст законопроекту додано як PDF. Читай БЕЗПОСЕРЕДНЬО З НЬОГО.'
+    : billText
+    ? 'Текст документу додано вище. Аналізуй на його основі.'
+    : 'Повний текст недоступний. Аналізуй на основі наявних метаданих та контексту.'
 
   const detailedPrompt = `Ти — незалежний аналітик законодавства. Твоя місія — знайти що насправді написано в законі, незалежно від того що влада декларує публічно.
 
@@ -164,7 +204,7 @@ export async function analyzeDetailed(bill: BillWithRelations): Promise<string> 
 Номер: ${bill.number ?? '—'} | Дата: ${bill.registration_date ? new Date(bill.registration_date).toLocaleDateString('uk-UA') : '—'}
 Ініціатор: ${bill.subject ?? '—'} | Статус: ${bill.current_phase_title ?? '—'}${contextBlock}${textBlock}
 
-${pdfBase64 ? 'Повний текст законопроекту додано як PDF документ вище. Читай БЕЗПОСЕРЕДНЬО З НЬОГО, не з пояснювальної записки авторів.' : ''}
+${sourceNote}
 
 Дай розгорнутий аналіз за пунктами (пиши українською, зрозумілою мовою, без юридичного жаргону):
 
