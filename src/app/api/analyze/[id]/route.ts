@@ -3,6 +3,8 @@ import { supabase, getAdminClient } from '@/lib/supabase'
 import { analyzeBill } from '@/lib/claude'
 import type { BillWithRelations } from '@/types'
 
+export const maxDuration = 60
+
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

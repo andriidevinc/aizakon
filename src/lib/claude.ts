@@ -107,22 +107,15 @@ export async function analyzeBill(bill: BillWithRelations): Promise<AIAnalysis> 
     .sort((a, b) => new Date(a.passing_date ?? 0).getTime() - new Date(b.passing_date ?? 0).getTime())
     .map(p => `• ${p.title}`).join('\n')
 
+  // Короткий аналіз: лише метадані з картки (без PDF — щоб вкластись у 10с ліміт Vercel Hobby)
   let cardText = ''
-  let billText = ''
-  let pdfBase64: string | null = null
-
   if (bill.url?.includes('itd.rada.gov.ua')) {
-    const { cardText: ct, pdfUrl, docxUrl, noteUrl } = await fetchCardData(bill.url)
+    const { cardText: ct } = await fetchCardData(bill.url)
     cardText = ct
-
-    // Намагаємось отримати текст закону: PDF > docx > пояснювальна записка
-    if (pdfUrl) pdfBase64 = await fetchPdfBase64(pdfUrl)
-    if (!pdfBase64 && docxUrl) billText = await fetchDocxText(docxUrl)
-    if (!pdfBase64 && !billText && noteUrl) billText = await fetchDocxText(noteUrl)
   }
 
   const contextBlock = cardText ? `\nКОНТЕКСТ З ОФІЦІЙНОЇ КАРТКИ:\n${cardText}` : ''
-  const textBlock = billText ? `\nТЕКСТ ДОКУМЕНТУ:\n${billText}` : ''
+  const textBlock = ''
 
   const textPrompt = `Ти — аналітик законодавства України. Пояснюєш законопроекти коротко і конкретно для звичайних людей.
 
@@ -140,17 +133,11 @@ ${passingsHistory ? `Проходження:\n${passingsHistory}` : ''}${context
 
 JSON без markdown: {"summary":"...","impact":"...","keywords":["...","...","..."]}`
 
-  const messages: Anthropic.MessageParam[] = pdfBase64
-    ? [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } } as Anthropic.DocumentBlockParam,
-          { type: 'text', text: textPrompt },
-        ],
-      }]
-    : [{ role: 'user', content: textPrompt }]
-
-  const message = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 1024, messages })
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: textPrompt }],
+  })
   const content = message.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type')
 
