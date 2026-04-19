@@ -114,6 +114,7 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
           initialSummary={b.ai_summary}
           initialImpact={b.ai_impact}
           initialKeywords={b.ai_keywords}
+          initialDetailed={(b as unknown as Record<string, unknown>).ai_detailed as string | null}
         />
       </section>
 
