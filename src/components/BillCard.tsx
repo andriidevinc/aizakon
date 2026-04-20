@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import StatusBadge from './StatusBadge'
+import { getBillStatus } from '@/types'
 import type { Bill } from '@/types'
 
 interface Props {
@@ -52,7 +53,11 @@ export default function BillCard({ bill }: Props) {
                 Євроінтеграція
               </span>
             )}
-            <span>{formatDate(bill.registration_date)}</span>
+            {getBillStatus(bill.current_phase_title) === 'adopted' && bill.current_phase_date ? (
+              <span>Прийнято {formatDate(bill.current_phase_date)}</span>
+            ) : (
+              <span>{formatDate(bill.registration_date)}</span>
+            )}
           </div>
         </div>
 

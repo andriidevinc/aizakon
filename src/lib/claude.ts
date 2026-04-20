@@ -14,45 +14,102 @@ export interface AIAnalysis {
 }
 
 // Знаходить PDF або docx "Проект Закону" зі сторінки картки
+// Порядок атрибутів у тегу <a> непередбачуваний, тому витягуємо кожен атрибут окремо
 function findBillDocuments(html: string): { pdfUrl: string | null; docxUrl: string | null; noteUrl: string | null } {
   let pdfUrl: string | null = null
   let docxUrl: string | null = null
   let noteUrl: string | null = null
 
-  // Шукаємо "Проект Закону" — PDF
-  const pdfMatch = html.match(/href="([^"]+)"[^>]*data-ext="\.pdf"[^>]*data-file-name="[^"]*Проект Закону[^"]*"/i)
-    ?? html.match(/data-file-name="[^"]*Проект Закону[^"]*"[^>]*href="([^"]+)"[^>]*data-ext="\.pdf"/i)
-  if (pdfMatch) pdfUrl = `https://itd.rada.gov.ua${pdfMatch[1]}`
+  const anchors = [...html.matchAll(/<a\b[^>]*>/gi)]
+  for (const anchor of anchors) {
+    const tag = anchor[0]
+    const href = tag.match(/href="([^"]+)"/)?.[1]
+    if (!href) continue
 
-  // Шукаємо "Проект Закону" — docx
-  const docxMatch = html.match(/href="([^"]+)"[^>]*data-ext="\.docx"[^>]*data-file-name="[^"]*Проект Закону[^"]*"/i)
-    ?? html.match(/data-file-name="[^"]*Проект Закону[^"]*"[^>]*href="([^"]+)"[^>]*data-ext="\.docx"/i)
-  if (docxMatch) docxUrl = `https://itd.rada.gov.ua${docxMatch[1]}`
+    const ext = tag.match(/data-ext="([^"]+)"/)?.[1]?.toLowerCase()
+    const fileName = tag.match(/data-file-name="([^"]+)"/)?.[1] ?? ''
+    const fullHref = href.startsWith('http') ? href : `https://itd.rada.gov.ua${href}`
 
-  // Пояснювальна записка — docx
-  const noteMatches = [...html.matchAll(/href="([^"]+)"[^>]*data-file-name="([^"]*Пояснювальна[^"]*)"/gi)]
-  if (noteMatches.length > 0) noteUrl = `https://itd.rada.gov.ua${noteMatches[0][1]}`
+    if (/проект закону/i.test(fileName)) {
+      if (ext === '.pdf' && !pdfUrl) pdfUrl = fullHref
+      else if (ext === '.docx' && !docxUrl) docxUrl = fullHref
+    }
+    if (/пояснювальна/i.test(fileName) && !noteUrl) {
+      noteUrl = fullHref
+    }
+  }
 
   return { pdfUrl, docxUrl, noteUrl }
 }
 
-// Завантажує PDF з retry і повертає як base64
-async function fetchPdfBase64(url: string, retries = 3): Promise<string | null> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
+// Завантажує файл з itd.rada.gov.ua через чанковий API (X-File-Id / X-Current-Chunk)
+async function fetchItdFile(fileId: string): Promise<ArrayBuffer | null> {
+  const url = 'https://itd.rada.gov.ua/billinfo/api/file/download/'
+  const chunks: ArrayBuffer[] = []
+  let totalChunks = 1
+
+  for (let chunk = 0; chunk < totalChunks; chunk++) {
     try {
       const r = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)',
+          'X-File-Id': fileId,
+          'X-Current-Chunk': String(chunk),
+        },
         signal: AbortSignal.timeout(20000),
       })
-      if (!r.ok) {
+      if (!r.ok) return null
+      const buf = await r.arrayBuffer()
+      chunks.push(buf)
+      if (chunk === 0) {
+        const chunkSize = parseInt(r.headers.get('ChunkSize') ?? '0')
+        const totalSize = parseInt(r.headers.get('Size') ?? '0')
+        if (chunkSize > 0 && totalSize > chunkSize) {
+          totalChunks = Math.ceil(totalSize / chunkSize)
+        }
+      }
+    } catch {
+      return null
+    }
+  }
+
+  if (chunks.length === 0) return null
+  if (chunks.length === 1) return chunks[0]
+  const total = chunks.reduce((s, c) => s + c.byteLength, 0)
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) { merged.set(new Uint8Array(c), offset); offset += c.byteLength }
+  return merged.buffer
+}
+
+// Завантажує PDF з retry і повертає як base64
+async function fetchPdfBase64(url: string, retries = 3): Promise<string | null> {
+  // itd.rada.gov.ua потребує спеціального API для завантаження файлів
+  const itdFileId = url.match(/\/pubFile\/(\d+)$/)?.[1]
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      let buffer: ArrayBuffer | null = null
+
+      if (itdFileId) {
+        buffer = await fetchItdFile(itdFileId)
+      } else {
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
+          signal: AbortSignal.timeout(20000),
+        })
+        if (!r.ok) { if (attempt < retries) continue; return null }
+        buffer = await r.arrayBuffer()
+      }
+
+      if (!buffer || buffer.byteLength < 1000) {
         if (attempt < retries) continue
         return null
       }
-      const buffer = await r.arrayBuffer()
-      if (buffer.byteLength < 1000) {
-        if (attempt < retries) continue
-        return null
-      }
+      // Перевірка що це справді PDF
+      const magic = String.fromCharCode(...new Uint8Array(buffer.slice(0, 4)))
+      if (magic !== '%PDF') { if (attempt < retries) continue; return null }
+
       return Buffer.from(buffer).toString('base64')
     } catch {
       if (attempt === retries) return null
@@ -63,17 +120,27 @@ async function fetchPdfBase64(url: string, retries = 3): Promise<string | null> 
 
 // Завантажує і парсить docx у plain text з retry
 async function fetchDocxText(url: string, retries = 2): Promise<string> {
+  const itdFileId = url.match(/\/pubFile\/(\d+)$/)?.[1]
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const r = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
-        signal: AbortSignal.timeout(15000),
-      })
-      if (!r.ok) {
+      let buffer: ArrayBuffer | null = null
+
+      if (itdFileId) {
+        buffer = await fetchItdFile(itdFileId)
+      } else {
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)' },
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!r.ok) { if (attempt < retries) continue; return '' }
+        buffer = await r.arrayBuffer()
+      }
+
+      if (!buffer || buffer.byteLength < 100) {
         if (attempt < retries) continue
         return ''
       }
-      const buffer = await r.arrayBuffer()
       const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) })
       return result.value.replace(/\s+/g, ' ').trim().slice(0, 6000)
     } catch {
