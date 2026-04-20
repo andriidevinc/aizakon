@@ -32,7 +32,7 @@ export default async function HomePage({
        bill_initiators (surname, firstname, initiator_type)`,
       { count: 'exact' }
     )
-    .order('registration_date', { ascending: false })
+    .order(statusFilter === 'adopted' ? 'current_phase_date' : 'registration_date', { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1)
 
   if (statusFilter === 'adopted') {
