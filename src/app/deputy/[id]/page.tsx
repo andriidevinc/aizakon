@@ -52,8 +52,11 @@ export default async function DeputyPage({ params }: { params: Promise<{ id: str
 
       {/* Профіль */}
       <div className="flex items-center gap-5 mb-8">
-        <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center text-2xl font-bold text-gray-500 flex-shrink-0">
-          {deputy.surname?.[0]}
+        <div className="w-16 h-16 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
+          {deputy.photo_url
+            ? <img src={deputy.photo_url} alt={fullName} className="w-full h-full object-cover" />
+            : <span className="w-full h-full flex items-center justify-center text-2xl font-bold text-gray-500">{deputy.surname?.[0]}</span>
+          }
         </div>
         <div>
           <h1 className="text-xl font-bold text-gray-900">{fullName}</h1>

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 export default async function DeputiesPage() {
   const { data: deputies } = await supabase
     .from('deputies')
-    .select('id, person_id, surname, firstname, patronymic, faction, convocation')
+    .select('id, person_id, surname, firstname, patronymic, faction, convocation, photo_url')
     .order('surname')
 
   const grouped: Record<string, typeof deputies> = {}
@@ -51,8 +51,11 @@ export default async function DeputiesPage() {
                   href={`/deputy/${d.person_id}`}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50 transition-all group"
                 >
-                  <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 text-sm font-semibold text-gray-500 group-hover:bg-blue-200 group-hover:text-blue-700 transition-colors">
-                    {d.surname?.[0]}
+                  <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {(d as any).photo_url
+                      ? <img src={(d as any).photo_url} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-sm font-semibold text-gray-500">{d.surname?.[0]}</span>
+                    }
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">
