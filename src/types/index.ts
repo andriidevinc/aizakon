@@ -60,11 +60,15 @@ export function getBillStatus(currentPhaseTitle: string | null): BillStatus {
   if (
     phase.includes('закон підписано') ||
     phase.includes('закон прийнято') ||
-    phase.includes('набрав чинності')
+    phase.includes('набрав чинності') ||
+    phase.includes('розсилання акта') ||  // itd: закон підписаний і розісланий
+    phase.includes('закон опубліковано')
   ) return 'adopted'
   if (
     phase.includes('відхилено') ||
-    phase.includes('відхилений')
+    phase.includes('відхилений') ||
+    phase.includes('не прийнято') ||
+    phase.includes('знято з розгляду')
   ) return 'rejected'
   if (
     phase.includes('відкликано') ||

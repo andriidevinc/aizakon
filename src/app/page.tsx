@@ -36,11 +36,27 @@ export default async function HomePage({
     .range(offset, offset + PAGE_SIZE - 1)
 
   if (statusFilter === 'adopted') {
-    query = query.or('current_phase_title.eq.Закон підписано,current_phase_title.eq.Набрав чинності')
+    query = query.or(
+      'current_phase_title.ilike.%Закон підписано%,' +
+      'current_phase_title.ilike.%Набрав чинності%,' +
+      'current_phase_title.ilike.%Розсилання акта%,' +
+      'current_phase_title.ilike.%Закон опубліковано%'
+    )
   } else if (statusFilter === 'in_progress') {
-    query = query.not('current_phase_title', 'in', '("Закон підписано","Набрав чинності","Відхилено","Відкликано")')
+    query = query
+      .not('current_phase_title', 'ilike', '%Закон підписано%')
+      .not('current_phase_title', 'ilike', '%Набрав чинності%')
+      .not('current_phase_title', 'ilike', '%Розсилання акта%')
+      .not('current_phase_title', 'ilike', '%Відхилено%')
+      .not('current_phase_title', 'ilike', '%не прийнято%')
+      .not('current_phase_title', 'ilike', '%Знято з розгляду%')
+      .not('current_phase_title', 'ilike', '%Відкликано%')
   } else if (statusFilter === 'rejected') {
-    query = query.eq('current_phase_title', 'Відхилено')
+    query = query.or(
+      'current_phase_title.ilike.%Відхилено%,' +
+      'current_phase_title.ilike.%не прийнято%,' +
+      'current_phase_title.ilike.%Знято з розгляду%'
+    )
   }
 
   if (searchQuery.length >= 3) {
