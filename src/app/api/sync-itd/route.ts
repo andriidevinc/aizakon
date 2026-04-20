@@ -73,25 +73,59 @@ function parsePage(html: string) {
   return bills
 }
 
-async function fetchPage(dateStart: string, dateEnd: string, page: number): Promise<string> {
-  const body = new URLSearchParams({
-    'BillSearchModel.registrationRangeStart': dateStart,
-    'BillSearchModel.registrationRangeEnd': dateEnd,
+async function fetchPage(dateStart: string, dateEnd: string, page: number, byPassing = false): Promise<string> {
+  const params: Record<string, string> = {
     'BillSearchModel.convocation': '0',
     'BillSearchModel.session': '0',
-    'BillSearchModel.registrationNumberCompareOperation': '0',
     'BillSearchModel.detailView': 'True',
     'Paging.page': String(page),
-  })
+  }
+  if (byPassing) {
+    params['BillSearchModel.passingsRangeStart'] = dateStart
+    params['BillSearchModel.passingsRangeEnd'] = dateEnd
+  } else {
+    params['BillSearchModel.registrationRangeStart'] = dateStart
+    params['BillSearchModel.registrationRangeEnd'] = dateEnd
+    params['BillSearchModel.registrationNumberCompareOperation'] = '0'
+  }
   const r = await fetch(SEARCH_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': 'Mozilla/5.0 AIZakon/1.0 (aizakon.vercel.app)',
     },
-    body: body.toString(),
+    body: new URLSearchParams(params).toString(),
   })
   return r.text()
+}
+
+async function syncRange(
+  supabase: ReturnType<typeof import('@/lib/supabase').getAdminClient>,
+  dateStart: string,
+  dateEnd: string,
+  byPassing: boolean
+): Promise<number> {
+  let totalSynced = 0
+  let page = 1
+  let totalPages = 1
+
+  do {
+    const html = await fetchPage(dateStart, dateEnd, page, byPassing)
+    if (page === 1) {
+      const m = html.match(/Знайдено законопроектів:\s*([\d\s]+)/)
+      const total = m ? parseInt(m[1].replace(/\s/g, '')) : 0
+      totalPages = Math.ceil(total / 30)
+    }
+    const bills = parsePage(html)
+    if (bills.length > 0) {
+      const { error } = await supabase.from('bills').upsert(bills)
+      if (!error) totalSynced += bills.length
+    }
+    page++
+    if (page <= totalPages) await new Promise(r => setTimeout(r, 200))
+  } while (page <= totalPages)
+
+  return totalSynced
 }
 
 function isAuthorized(req: NextRequest): boolean {
@@ -110,42 +144,24 @@ export async function GET(req: NextRequest) {
 
   const supabase = getAdminClient()
 
-  // Синхронізуємо останні 14 днів (з запасом на випадок простою)
   const end = new Date()
-  const start = new Date()
-  start.setDate(start.getDate() - 14)
 
-  const dateStart = formatDate(start)
-  const dateEnd = formatDate(end)
+  // 1. Нові законопроекти — за датою реєстрації (останні 14 днів)
+  const regStart = new Date()
+  regStart.setDate(regStart.getDate() - 14)
+  const synced1 = await syncRange(supabase, formatDate(regStart), formatDate(end), false)
 
-  let totalSynced = 0
-  let page = 1
-  let totalPages = 1
+  // 2. Оновлення статусів — за датою руху (останні 7 днів)
+  // Ловить закони будь-якої давнини що щойно змінили статус
+  const passStart = new Date()
+  passStart.setDate(passStart.getDate() - 7)
+  const synced2 = await syncRange(supabase, formatDate(passStart), formatDate(end), true)
 
-  do {
-    const html = await fetchPage(dateStart, dateEnd, page)
-
-    if (page === 1) {
-      const m = html.match(/Знайдено законопроектів:\s*([\d\s]+)/)
-      const total = m ? parseInt(m[1].replace(/\s/g, '')) : 0
-      totalPages = Math.ceil(total / 30)
-    }
-
-    const bills = parsePage(html)
-    if (bills.length > 0) {
-      const { error } = await supabase.from('bills').upsert(bills)
-      if (!error) totalSynced += bills.length
-    }
-
-    page++
-    if (page <= totalPages) await new Promise(r => setTimeout(r, 200))
-  } while (page <= totalPages)
-
-  console.log(`[sync-itd] Синхронізовано: ${totalSynced} (${dateStart} — ${dateEnd})`)
+  console.log(`[sync-itd] Нових: ${synced1}, оновлено статусів: ${synced2}`)
 
   return NextResponse.json({
     success: true,
-    synced: totalSynced,
-    date_range: `${dateStart} — ${dateEnd}`,
+    new_bills: synced1,
+    status_updates: synced2,
   })
 }
