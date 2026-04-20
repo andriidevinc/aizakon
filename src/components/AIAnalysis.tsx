@@ -51,9 +51,30 @@ export default function AIAnalysis({ billId, initialSummary, initialImpact, init
     try {
       const res = await fetch(`/api/analyze-detailed/${billId}`, { method: 'POST' })
       if (!res.ok) throw new Error('Помилка сервера')
-      const data = await res.json()
-      setDetailed(data.detailed)
-      if (data.pdfAvailable !== undefined) setPdfAvailable(data.pdfAvailable)
+
+      const pdfHeader = res.headers.get('X-Pdf-Available')
+      if (pdfHeader !== null) setPdfAvailable(pdfHeader === 'true')
+
+      // Кешована відповідь — JSON
+      const contentType = res.headers.get('Content-Type') ?? ''
+      if (contentType.includes('application/json')) {
+        const data = await res.json()
+        setDetailed(data.detailed)
+        if (data.pdfAvailable !== undefined) setPdfAvailable(data.pdfAvailable)
+        return
+      }
+
+      // Стрімінг — читаємо по шматках
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let text = ''
+      setLoadingDetailed(false)
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text += decoder.decode(value, { stream: true })
+        setDetailed(text)
+      }
     } catch {
       setDetailed('Не вдалося отримати детальний аналіз. Спробуйте пізніше.')
     } finally {

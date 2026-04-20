@@ -206,7 +206,7 @@ async function fetchCardData(cardUrl: string) {
 }
 
 // Отримує повний текст закону (PDF або docx). Повертає { pdfBase64, billText, pdfAvailable }
-async function fetchBillText(bill: BillWithRelations) {
+export async function fetchBillText(bill: BillWithRelations) {
   let cardUrl = bill.url?.includes('itd.rada.gov.ua') ? bill.url : null
   if (!cardUrl && bill.number) cardUrl = await findItdCardUrl(bill.number)
 
